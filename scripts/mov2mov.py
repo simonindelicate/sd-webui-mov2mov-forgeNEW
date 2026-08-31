@@ -277,7 +277,12 @@ def mov2mov(
         initial_noise_multiplier=noise_multiplier,
     )
 
-    p.scripts = modules.scripts.scripts_img2img
+    # Keep the runner that created ``args`` attached to the processing object.
+    # process_images() uses it to execute every img2img always-on script for each
+    # frame (FaceSwapLab, ControlNet, etc.). Mixing in scripts_img2img here makes
+    # script argument slices belong to a different runner and can silently skip or
+    # misconfigure extensions.
+    p.scripts = scripts_mov2mov
     p.script_args = args
 
     p.user = request.username

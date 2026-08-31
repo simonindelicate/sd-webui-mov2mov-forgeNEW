@@ -54,11 +54,17 @@ def get_mov_all_images(file, frames, rgb=False):
         return None
 
     fps = cap.get(cv2.CAP_PROP_FPS)
+    if not fps or fps <= 0:
+        cap.release()
+        raise ValueError("The video does not report a valid frame rate")
+    if not frames or frames <= 0:
+        cap.release()
+        raise ValueError("Movie FPS must be greater than zero")
     if frames > fps:
         print('Waring: The set number of frames is greater than the number of video frames')
         frames = int(fps)
 
-    skip = fps // frames
+    skip = max(1, int(fps // frames))
     count = 1
     fs = 1
     image_list = []
