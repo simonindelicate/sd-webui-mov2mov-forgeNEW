@@ -67,3 +67,13 @@ def test_toprow_is_created_inside_a_blocks_context():
     assert "with gr.TabItem(" not in ui
     assert 'elem_id="txt2img_extra_tabs"' not in ui
     assert 'elem_id="resize_mode"' not in ui
+
+
+def test_mov2mov_does_not_register_unknown_infotext_source_tab():
+    output_ui = (ROOT / "scripts" / "m2m_ui_common.py").read_text(
+        encoding="utf-8"
+    )
+    assert "register_paste_params_button" not in output_ui
+    assert "ParamBinding" not in output_ui
+    assert "source_tabname" not in output_ui
+    assert "modules.infotext_utils" not in output_ui

@@ -41,6 +41,12 @@ packages for this extension.
   runner is restored in a `finally` block. If mov2mov or another extension raises
   while constructing the UI, Forge Neo's later txt2img/img2img callbacks do not
   inherit mov2mov's global runner.
+* **Mov2mov does not register a fake infotext source tab.** Forge Neo's infotext
+  registry contains built-in sources such as `txt2img` and `img2img`, but there
+  is no `mov2mov` entry. The old image-gallery send buttons registered mov2mov as
+  a source and caused Forge's global paste-button connection pass to fail with
+  `KeyError: 'mov2mov'`. Those inapplicable image send bindings are not created
+  for a video-only output panel.
 * **Video validation is explicit.** Invalid/zero source FPS and invalid requested
   FPS now produce useful errors, and frame sampling can no longer calculate a
   zero step.
