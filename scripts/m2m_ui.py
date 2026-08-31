@@ -11,7 +11,6 @@ from modules import (
 from modules.call_queue import wrap_gradio_gpu_call
 from modules.shared import opts
 from modules.ui import (
-    create_output_panel,
     create_override_settings_dropdown,
     ordered_ui_categories,
     resize_from_to_html,
@@ -25,12 +24,12 @@ from modules.ui_components import (
     ResizeHandleRow,
     ToolButton,
 )
-from scripts import m2m_hook as patches
 from scripts import mov2mov
 from scripts.m2m_config import mov2mov_outpath_samples, mov2mov_output_dir
 from scripts.mov2mov import scripts_mov2mov
 from scripts.movie_editor import MovieEditor
 from scripts.m2m_ui_common import create_output_panel
+from scripts.m2m_compat import media_source_kwargs
 
 id_part = "mov2mov"
 
@@ -93,7 +92,7 @@ def on_ui_tabs():
                             label="Video for mov2mov",
                             elem_id=f"{id_part}_mov",
                             show_label=False,
-                            source="upload",
+                            **media_source_kwargs(gr.Video),
                         )
 
                         with FormRow():
@@ -124,7 +123,7 @@ def on_ui_tabs():
                                     ) as tab_scale_to:
                                         with FormRow():
                                             with gr.Column(
-                                                elem_id=f"{id_part}_column_size",
+                                                elem_id=f"{id_part}_resize_to_column",
                                                 scale=4,
                                             ):
                                                 width = gr.Slider(
@@ -324,8 +323,8 @@ def on_ui_tabs():
                 ]
                 + custom_inputs,
                 outputs=[
-                   
                     output_panel.video,
+                    output_panel.generation_info,
                     output_panel.infotext,
                     output_panel.html_log,
                 ],
@@ -356,28 +355,5 @@ def on_ui_tabs():
         return [(mov2mov_interface, "mov2mov", f"{id_part}_tabs")]
 
 
-def block_context_init(self, *args, **kwargs):
-    origin_block_context_init(self, *args, **kwargs)
-
-    if self.elem_id == "tab_img2img":
-        self.parent.__enter__()
-        on_ui_tabs()
-        self.parent.__exit__()
-
-
-def on_app_reload():
-    global origin_block_context_init
-    if origin_block_context_init:
-        patches.undo(__name__, obj=gr.blocks.BlockContext, field="__init__")
-        origin_block_context_init = None
-
-
-origin_block_context_init = patches.patch(
-    __name__,
-    obj=gr.blocks.BlockContext,
-    field="__init__",
-    replacement=block_context_init,
-)
-script_callbacks.on_before_reload(on_app_reload)
 script_callbacks.on_ui_settings(on_ui_settings)
-# script_callbacks.on_ui_tabs(on_ui_tabs)
+script_callbacks.on_ui_tabs(on_ui_tabs)
