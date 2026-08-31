@@ -1,8 +1,10 @@
+import inspect
 from contextlib import ExitStack
 
 import gradio as gr
 
 from modules import (
+    errors,
     script_callbacks,
     scripts,
     shared,
@@ -12,10 +14,10 @@ from modules.call_queue import wrap_gradio_gpu_call
 from modules.shared import opts
 from modules.ui import (
     create_override_settings_dropdown,
+    detect_image_size_symbol,
     ordered_ui_categories,
     resize_from_to_html,
     switch_values_symbol,
-    detect_image_size_symbol,
 )
 from modules.ui_components import (
     FormGroup,
@@ -25,11 +27,11 @@ from modules.ui_components import (
     ToolButton,
 )
 from scripts import mov2mov
-from scripts.m2m_config import mov2mov_outpath_samples, mov2mov_output_dir
+from scripts.m2m_compat import media_source_kwargs, option, toprow_is_compact
+from scripts.m2m_config import mov2mov_output_dir, mov2mov_outpath_samples
+from scripts.m2m_ui_common import create_output_panel
 from scripts.mov2mov import scripts_mov2mov
 from scripts.movie_editor import MovieEditor
-from scripts.m2m_ui_common import create_output_panel
-from scripts.m2m_compat import media_source_kwargs, option
 
 id_part = "mov2mov"
 
@@ -50,27 +52,62 @@ def on_ui_settings():
     )
 
 
-img2img_toprow: gr.Row = None
+def _fixed_parameter_count(fn):
+    """Positional parameters ``fn`` takes before its ``*args`` catch-all.
+
+    ``gradio`` injects the ``gr.Request`` parameter itself, so it is not supplied
+    by the UI and must not be counted.
+    """
+    count = 0
+    for parameter in inspect.signature(fn).parameters.values():
+        if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+            break
+        if parameter.annotation is gr.Request:
+            continue
+        count += 1
+    return count
+
+
+def _check_input_count(fn, fixed_inputs):
+    """Fail loudly at build time if the UI and the handler have drifted apart.
+
+    An off-by-one here does not raise on the Python side: Gradio simply feeds
+    every value to the wrong component and reports it as a validation error on
+    whichever input happens to be strict (a checkbox landing on a gallery, say).
+    Catching it while the tab is built keeps that class of bug legible.
+    """
+    expected = _fixed_parameter_count(fn)
+    if len(fixed_inputs) != expected:
+        errors.report(
+            f"mov2mov: UI passes {len(fixed_inputs)} fixed arguments but "
+            f"{fn.__name__}() declares {expected}. Script arguments will be "
+            "misaligned; this is a bug in the extension.",
+            exc_info=False,
+        )
 
 
 def _build_ui_tabs():
-    """
+    """Construct the mov2mov tab.
 
-    构造ui
+    ``on_ui_tabs`` callbacks run while Forge Neo is collecting interfaces, not
+    from inside its root Blocks context, so the tab has to bring its own
+    ``gr.Blocks`` (Toprow registers events in its constructor).
     """
     scripts.scripts_current = scripts_mov2mov
     scripts_mov2mov.initialize_scripts(is_img2img=True)
-    # on_ui_tabs callbacks are invoked while Forge Neo is collecting interfaces,
-    # not from inside its root Blocks context. Components with constructor-time
-    # events (notably Toprow.prompt_img.change) therefore require an interface
-    # Blocks of their own, exactly like Forge's built-in extension tabs.
-    with gr.Blocks() as mov2mov_interface:
+
+    with gr.Blocks(analytics_enabled=False) as mov2mov_interface:
         toprow = ui_toprow.Toprow(
             is_img2img=True,
-            is_compact=option(shared.opts, "compact_prompt_box", False),
+            is_compact=toprow_is_compact(shared.opts),
             id_part=id_part,
         )
-        dummy_component = gr.Label(visible=False)
+
+        # Gradio 4 validates every input against its component's data model, so
+        # a placeholder must be a component that accepts a scalar. gr.Label is
+        # backed by LabelData and rejects the task id and the resolution numbers
+        # the JavaScript helpers push through these slots.
+        dummy_component = gr.Textbox(visible=False)
 
         extra_tabs = gr.Tabs(
             elem_id=f"{id_part}_extra_tabs", elem_classes=["extra-networks"]
@@ -85,6 +122,13 @@ def _build_ui_tabs():
                 stack.enter_context(
                     gr.Column(variant="compact", elem_id=f"{id_part}_settings")
                 )
+
+                # Must run before any setup_ui_for_section() call: prepare_ui()
+                # resets the runner's argument list, and every control created
+                # before it would keep stale args_from/args_to offsets. The
+                # category order is user configurable, so "image" is not
+                # reliably first.
+                scripts_mov2mov.prepare_ui()
 
                 for category in ordered_ui_categories():
 
@@ -112,8 +156,6 @@ def _build_ui_tabs():
                                 type="index",
                                 value="Just resize",
                             )
-
-                        scripts_mov2mov.prepare_ui()
 
                     elif category == "dimensions":
                         with FormRow():
@@ -160,7 +202,7 @@ def _build_ui_tabs():
                                                 detect_image_size_btn = ToolButton(
                                                     value=detect_image_size_symbol,
                                                     elem_id=f"{id_part}_detect_image_size_btn",
-                                                    tooltip="Auto detect size from img2img",
+                                                    tooltip="Auto detect size from the source video",
                                                 )
 
                                     with gr.Tab(
@@ -192,7 +234,7 @@ def _build_ui_tabs():
                                             )
 
                                     on_change_args = dict(
-                                        fn=resize_from_to_html,
+                                        fn=_resize_from_to_html,
                                         _js="currentMov2movSourceResolution",
                                         inputs=[
                                             dummy_component,
@@ -236,7 +278,7 @@ def _build_ui_tabs():
                         )
                         with gr.Row(elem_id=f"{id_part}_frames_setting"):
                             movie_frames = gr.Slider(
-                                minimum=10,
+                                minimum=1,
                                 maximum=60,
                                 step=1,
                                 label="Movie FPS",
@@ -244,7 +286,7 @@ def _build_ui_tabs():
                                 value=30,
                             )
                             max_frames = gr.Number(
-                                label="Max FPS",
+                                label="Max frames (-1 for all)",
                                 value=-1,
                                 elem_id=f"{id_part}_max_frames",
                             )
@@ -258,6 +300,17 @@ def _build_ui_tabs():
                                 label="CFG Scale",
                                 value=7.0,
                                 elem_id=f"{id_part}_cfg_scale",
+                            )
+                            # Forge Neo needs this for distilled models (Flux,
+                            # Chroma); without it every frame silently uses the
+                            # processing default.
+                            distilled_cfg_scale = gr.Slider(
+                                minimum=0.0,
+                                maximum=24.0,
+                                step=0.5,
+                                label="Distilled CFG Scale",
+                                value=3.5,
+                                elem_id=f"{id_part}_distilled_cfg_scale",
                             )
                             image_cfg_scale = gr.Slider(
                                 minimum=0,
@@ -295,39 +348,50 @@ def _build_ui_tabs():
                         scripts_mov2mov.setup_ui_for_section(category)
 
             output_panel = create_output_panel(
-                id_part, option(opts, "mov2mov_output_dir", mov2mov_output_dir)
+                id_part,
+                option(opts, "mov2mov_output_dir", mov2mov_output_dir),
+                toprow,
             )
+
+            fixed_inputs = [
+                dummy_component,  # replaced by the task id in JavaScript
+                dummy_component,  # replaced by the tab index in JavaScript
+                toprow.prompt,
+                toprow.negative_prompt,
+                toprow.ui_styles.dropdown,
+                init_mov,
+                cfg_scale,
+                distilled_cfg_scale,
+                image_cfg_scale,
+                denoising_strength,
+                selected_scale_tab,
+                height,
+                width,
+                scale_by,
+                resize_mode,
+                override_settings,
+                # mov2mov params
+                noise_multiplier,
+                movie_frames,
+                max_frames,
+                # editor
+                editor.gr_enable_movie_editor,
+                editor.gr_df,
+                editor.gr_eb_weight,
+            ]
+            _check_input_count(mov2mov.mov2mov, fixed_inputs)
+
+            mov2mov_inputs = fixed_inputs + custom_inputs
+
+            # Forge Neo's create_submit_args() guesses where the appended output
+            # values start by looking for a gallery-shaped array at a fixed
+            # offset. mov2mov's outputs begin with a video, so that guess is
+            # wrong here and truncates real arguments as soon as a script's last
+            # control happens to hold a list. Pass the exact count instead.
             mov2mov_args = dict(
                 fn=wrap_gradio_gpu_call(mov2mov.mov2mov, extra_outputs=[None, "", ""]),
-                _js="submit_mov2mov",
-                inputs=[
-                    dummy_component,
-                    dummy_component,
-                    toprow.prompt,
-                    toprow.negative_prompt,
-                    toprow.ui_styles.dropdown,
-                    init_mov,
-                    cfg_scale,
-                    image_cfg_scale,
-                    denoising_strength,
-                    selected_scale_tab,
-                    height,
-                    width,
-                    scale_by,
-                    resize_mode,
-                    override_settings,
-                    # refiner
-                    # enable_refiner, refiner_checkpoint, refiner_switch_at,
-                    # mov2mov params
-                    noise_multiplier,
-                    movie_frames,
-                    max_frames,
-                    # editor
-                    editor.gr_enable_movie_editor,
-                    editor.gr_df,
-                    editor.gr_eb_weight,
-                ]
-                + custom_inputs,
+                _js=f"function(){{ return submit_mov2mov(arguments, {len(mov2mov_inputs)}) }}",
+                inputs=mov2mov_inputs,
                 outputs=[
                     output_panel.video,
                     output_panel.generation_info,
@@ -341,14 +405,13 @@ def _build_ui_tabs():
             toprow.submit.click(**mov2mov_args)
 
             res_switch_btn.click(
-                fn=None,
-                _js="function(){switchWidthHeight('mov2mov')}",
-                inputs=None,
-                outputs=None,
+                fn=lambda w, h: (h, w),
+                inputs=[width, height],
+                outputs=[width, height],
                 show_progress=False,
             )
             detect_image_size_btn.click(
-                fn=lambda w, h, _: (w or gr.update(), h or gr.update()),
+                fn=_detect_image_size,
                 _js="currentMov2movSourceResolution",
                 inputs=[dummy_component, dummy_component, dummy_component],
                 outputs=[width, height],
@@ -356,9 +419,27 @@ def _build_ui_tabs():
             )
 
         extra_tabs.__exit__()
-        scripts.scripts_current = None
 
-        return [(mov2mov_interface, "mov2mov", f"{id_part}_tabs")]
+    return [(mov2mov_interface, "mov2mov", f"{id_part}_tabs")]
+
+
+def _to_number(value, default=0):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _resize_from_to_html(width, height, scale_by):
+    """Wrap Forge's helper so the placeholder's string values cannot break it."""
+    return resize_from_to_html(_to_number(width), _to_number(height), scale_by or 0.0)
+
+
+def _detect_image_size(width, height, _unused):
+    # The placeholder is a Textbox, so "0" arrives truthy; compare numerically.
+    width = _to_number(width)
+    height = _to_number(height)
+    return (width or gr.update(), height or gr.update())
 
 
 def on_ui_tabs():
@@ -368,8 +449,8 @@ def on_ui_tabs():
         return _build_ui_tabs()
     finally:
         # UI construction can fail when another extension has incompatible UI
-        # code. Always restore Forge's global runner so txt2img/img2img startup is
-        # not poisoned by a mov2mov callback error.
+        # code. Always restore Forge's global runner so txt2img/img2img startup
+        # is not poisoned by a mov2mov callback error.
         scripts.scripts_current = previous_runner
 
 

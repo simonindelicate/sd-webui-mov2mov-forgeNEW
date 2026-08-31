@@ -29,9 +29,13 @@ import modules
 from ebsynth import Keyframe
 from modules.processing import Processed
 from modules.shared import opts
-from scripts.m2m_compat import option
+from scripts.m2m_compat import option, supported_kwargs
 
 scripts_mov2mov = scripts.ScriptRunner()
+
+
+def output_dir():
+    return option(shared.opts, "mov2mov_output_dir", mov2mov_output_dir) or mov2mov_output_dir
 
 
 def check_data_frame(df: pandas.DataFrame):
@@ -46,13 +50,13 @@ def check_data_frame(df: pandas.DataFrame):
 
 
 def save_video(images, fps, extension=".mp4"):
-    if not os.path.exists(
-        shared.opts.data.get("mov2mov_output_dir", mov2mov_output_dir)
-    ):
-        os.makedirs(
-            shared.opts.data.get("mov2mov_output_dir", mov2mov_output_dir),
-            exist_ok=True,
+    if not images:
+        raise RuntimeError(
+            "mov2mov produced no frames. Check the source video and the Movie FPS setting."
         )
+
+    directory = output_dir()
+    os.makedirs(directory, exist_ok=True)
 
     r_f = extension
 
@@ -61,10 +65,7 @@ def save_video(images, fps, extension=".mp4"):
     video = images_to_video(
         images,
         fps,
-        os.path.join(
-            shared.opts.data.get("mov2mov_output_dir", mov2mov_output_dir),
-            str(int(time.time())) + r_f,
-        ),
+        os.path.join(directory, str(int(time.time())) + r_f),
     )
     print(f"The generation is complete, the directory::{video}")
 
@@ -75,8 +76,7 @@ def process_mov2mov(p, mov_file, movie_frames, max_frames, resize_mode, w, h, ar
     processing.fix_seed(p)
     images = get_mov_all_images(mov_file, movie_frames)
     if not images:
-        print("Failed to parse the video, please check")
-        return
+        raise RuntimeError("Failed to decode any frame from the video, please check the file")
 
     print(f"The video conversion is completed, images:{len(images)}")
     if max_frames == -1 or max_frames > len(images):
@@ -119,8 +119,7 @@ def process_keyframes(p, mov_file, fps, df, args):
     processing.fix_seed(p)
     images = get_mov_all_images(mov_file, fps)
     if not images:
-        print("Failed to parse the video, please check")
-        return
+        raise RuntimeError("Failed to decode any frame from the video, please check the file")
 
     # 通过宽高,缩放模式,预处理图片
     images = [PIL.Image.fromarray(image) for image in images]
@@ -170,7 +169,7 @@ def process_keyframes(p, mov_file, fps, df, args):
     images = [PIL.Image.fromarray(image) for image in images]
     images = [
         (
-            image.resize(p.width, p.height)
+            image.resize((p.width, p.height))
             if image.width != p.width or image.height != p.height
             else image
         )
@@ -216,6 +215,7 @@ def mov2mov(
     prompt_styles,
     mov_file,
     cfg_scale,
+    distilled_cfg_scale,
     image_cfg_scale,
     denoising_strength,
     selected_scale_tab,
@@ -253,9 +253,14 @@ def mov2mov(
     inpainting_mask_invert = 0
 
     p = StableDiffusionProcessingImg2Img(
+        **supported_kwargs(
+            StableDiffusionProcessingImg2Img,
+            # Only Forge/Forge Neo define this; on A1111 it is dropped silently.
+            distilled_cfg_scale=distilled_cfg_scale,
+        ),
         sd_model=shared.sd_model,
-        outpath_samples=shared.opts.data.get("mov2mov_output_dir", mov2mov_output_dir),
-        outpath_grids=shared.opts.data.get("mov2mov_output_dir", mov2mov_output_dir),
+        outpath_samples=output_dir(),
+        outpath_grids=output_dir(),
         prompt=prompt,
         negative_prompt=negative_prompt,
         styles=prompt_styles,
@@ -286,7 +291,7 @@ def mov2mov(
     p.scripts = scripts_mov2mov
     p.script_args = args
 
-    p.user = request.username
+    p.user = getattr(request, "username", None)
 
     if option(shared.opts, "enable_console_prompts", False):
         print(f"\nmov2mov: {prompt}", file=shared.progress_print_out)

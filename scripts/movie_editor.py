@@ -13,7 +13,13 @@ from scripts.m2m_compat import media_source_kwargs, update
 try:
     from modules import deepbooru as deepbooru_module
 except ImportError:
+    # Forge Neo ships neither modules.deepbooru nor modules.interrogate.
     deepbooru_module = None
+
+
+def _interrogator():
+    """Forge's CLIP interrogator, or None where this fork has removed it."""
+    return getattr(shared, "interrogator", None)
 
 
 class MovieEditor:
@@ -115,17 +121,23 @@ class MovieEditor:
                     datatype=["number", "number", "str"],
                     row_count=1,
                     col_count=(3, "fixed"),
-                    max_rows=None,
                     height=480,
                     elem_id=f"{id_part}_video_editor_custom_data_frame",
                 )
                 self.gr_df = data_frame
 
             with gr.Row():
+                has_interrogator = _interrogator() is not None
                 interrogate = gr.Button(
                     value="Clip Interrogate Keyframe",
                     size="sm",
                     elem_id=f"{id_part}_video_editor_interrogate",
+                    interactive=has_interrogator,
+                    tooltip=(
+                        "Caption keyframes with CLIP"
+                        if has_interrogator
+                        else "Unavailable: this WebUI does not include the CLIP interrogator"
+                    ),
                 )
                 deepbooru = gr.Button(
                     value="Deepbooru Keyframe",
@@ -135,7 +147,7 @@ class MovieEditor:
                     tooltip=(
                         "Tag keyframes with Deepbooru"
                         if deepbooru_module is not None
-                        else "Unavailable: Forge Neo does not include Deepbooru"
+                        else "Unavailable: this WebUI does not include Deepbooru"
                     ),
                 )
 
@@ -217,6 +229,14 @@ class MovieEditor:
         """
         Interrogate key frame
         """
+        interrogator = _interrogator()
+        if interrogator is None:
+            raise gr.Error(
+                "CLIP keyframe captioning is unavailable because this WebUI does "
+                "not provide an interrogator. Other Movie Editor features remain "
+                "available; write keyframe prompts by hand instead."
+            )
+
         bar = tqdm(total=len(data_frame))
         for index, row in data_frame.iterrows():
             if row["frame"] <= 0:
@@ -225,7 +245,7 @@ class MovieEditor:
             frame = row["frame"] - 1
             image = self.frames[frame]
             image = Image.fromarray(image)
-            prompt = shared.interrogator.interrogate(image.convert("RGB"))
+            prompt = interrogator.interrogate(image.convert("RGB"))
             data_frame.at[index, "prompt"] = prompt
             bar.update(1)
 
@@ -238,9 +258,9 @@ class MovieEditor:
         """
         if deepbooru_module is None:
             raise gr.Error(
-                "Deepbooru keyframe tagging is unavailable because this Forge Neo "
-                "installation does not provide modules.deepbooru. Other Movie Editor "
-                "features remain available."
+                "Deepbooru keyframe tagging is unavailable because this WebUI does "
+                "not provide modules.deepbooru. Other Movie Editor features remain "
+                "available."
             )
 
         bar = tqdm(total=len(data_frame))
