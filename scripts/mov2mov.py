@@ -29,6 +29,7 @@ import modules
 from ebsynth import Keyframe
 from modules.processing import Processed
 from modules.shared import opts
+from scripts.m2m_compat import option
 
 scripts_mov2mov = scripts.ScriptRunner()
 
@@ -277,12 +278,17 @@ def mov2mov(
         initial_noise_multiplier=noise_multiplier,
     )
 
-    p.scripts = modules.scripts.scripts_img2img
+    # Keep the runner that created ``args`` attached to the processing object.
+    # process_images() uses it to execute every img2img always-on script for each
+    # frame (FaceSwapLab, ControlNet, etc.). Mixing in scripts_img2img here makes
+    # script argument slices belong to a different runner and can silently skip or
+    # misconfigure extensions.
+    p.scripts = scripts_mov2mov
     p.script_args = args
 
     p.user = request.username
 
-    if shared.opts.enable_console_prompts:
+    if option(shared.opts, "enable_console_prompts", False):
         print(f"\nmov2mov: {prompt}", file=shared.progress_print_out)
 
     with closing(p):
@@ -319,10 +325,10 @@ def mov2mov(
     shared.total_tqdm.clear()
 
     generation_info_js = processed.js()
-    if opts.samples_log_stdout:
+    if option(opts, "samples_log_stdout", False):
         print(generation_info_js)
 
-    if opts.do_not_show_images:
+    if option(opts, "do_not_show_images", False):
         processed.images = []
 
     return (

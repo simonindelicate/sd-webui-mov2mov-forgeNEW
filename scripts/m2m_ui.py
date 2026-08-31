@@ -11,7 +11,6 @@ from modules import (
 from modules.call_queue import wrap_gradio_gpu_call
 from modules.shared import opts
 from modules.ui import (
-    create_output_panel,
     create_override_settings_dropdown,
     ordered_ui_categories,
     resize_from_to_html,
@@ -25,12 +24,12 @@ from modules.ui_components import (
     ResizeHandleRow,
     ToolButton,
 )
-from scripts import m2m_hook as patches
 from scripts import mov2mov
 from scripts.m2m_config import mov2mov_outpath_samples, mov2mov_output_dir
 from scripts.mov2mov import scripts_mov2mov
 from scripts.movie_editor import MovieEditor
 from scripts.m2m_ui_common import create_output_panel
+from scripts.m2m_compat import media_source_kwargs, option
 
 id_part = "mov2mov"
 
@@ -54,23 +53,27 @@ def on_ui_settings():
 img2img_toprow: gr.Row = None
 
 
-def on_ui_tabs():
+def _build_ui_tabs():
     """
 
     构造ui
     """
     scripts.scripts_current = scripts_mov2mov
     scripts_mov2mov.initialize_scripts(is_img2img=True)
-    with gr.TabItem(
-        "mov2mov", id=f"tab_{id_part}", elem_id=f"tab_{id_part}"
-    ) as mov2mov_interface:
+    # on_ui_tabs callbacks are invoked while Forge Neo is collecting interfaces,
+    # not from inside its root Blocks context. Components with constructor-time
+    # events (notably Toprow.prompt_img.change) therefore require an interface
+    # Blocks of their own, exactly like Forge's built-in extension tabs.
+    with gr.Blocks() as mov2mov_interface:
         toprow = ui_toprow.Toprow(
-            is_img2img=True, is_compact=shared.opts.compact_prompt_box, id_part=id_part
+            is_img2img=True,
+            is_compact=option(shared.opts, "compact_prompt_box", False),
+            id_part=id_part,
         )
         dummy_component = gr.Label(visible=False)
 
         extra_tabs = gr.Tabs(
-            elem_id="txt2img_extra_tabs", elem_classes=["extra-networks"]
+            elem_id=f"{id_part}_extra_tabs", elem_classes=["extra-networks"]
         )
         extra_tabs.__enter__()
 
@@ -93,13 +96,13 @@ def on_ui_tabs():
                             label="Video for mov2mov",
                             elem_id=f"{id_part}_mov",
                             show_label=False,
-                            source="upload",
+                            **media_source_kwargs(gr.Video),
                         )
 
                         with FormRow():
                             resize_mode = gr.Radio(
                                 label="Resize mode",
-                                elem_id="resize_mode",
+                                elem_id=f"{id_part}_resize_mode",
                                 choices=[
                                     "Just resize",
                                     "Crop and resize",
@@ -124,7 +127,7 @@ def on_ui_tabs():
                                     ) as tab_scale_to:
                                         with FormRow():
                                             with gr.Column(
-                                                elem_id=f"{id_part}_column_size",
+                                                elem_id=f"{id_part}_resize_to_column",
                                                 scale=4,
                                             ):
                                                 width = gr.Slider(
@@ -291,7 +294,9 @@ def on_ui_tabs():
                     if category not in {"accordions"}:
                         scripts_mov2mov.setup_ui_for_section(category)
 
-            output_panel = create_output_panel(id_part, opts.mov2mov_output_dir)
+            output_panel = create_output_panel(
+                id_part, option(opts, "mov2mov_output_dir", mov2mov_output_dir)
+            )
             mov2mov_args = dict(
                 fn=wrap_gradio_gpu_call(mov2mov.mov2mov, extra_outputs=[None, "", ""]),
                 _js="submit_mov2mov",
@@ -324,8 +329,8 @@ def on_ui_tabs():
                 ]
                 + custom_inputs,
                 outputs=[
-                   
                     output_panel.video,
+                    output_panel.generation_info,
                     output_panel.infotext,
                     output_panel.html_log,
                 ],
@@ -356,28 +361,17 @@ def on_ui_tabs():
         return [(mov2mov_interface, "mov2mov", f"{id_part}_tabs")]
 
 
-def block_context_init(self, *args, **kwargs):
-    origin_block_context_init(self, *args, **kwargs)
-
-    if self.elem_id == "tab_img2img":
-        self.parent.__enter__()
-        on_ui_tabs()
-        self.parent.__exit__()
-
-
-def on_app_reload():
-    global origin_block_context_init
-    if origin_block_context_init:
-        patches.undo(__name__, obj=gr.blocks.BlockContext, field="__init__")
-        origin_block_context_init = None
+def on_ui_tabs():
+    """Build the tab without leaking mov2mov's runner into other UI callbacks."""
+    previous_runner = scripts.scripts_current
+    try:
+        return _build_ui_tabs()
+    finally:
+        # UI construction can fail when another extension has incompatible UI
+        # code. Always restore Forge's global runner so txt2img/img2img startup is
+        # not poisoned by a mov2mov callback error.
+        scripts.scripts_current = previous_runner
 
 
-origin_block_context_init = patches.patch(
-    __name__,
-    obj=gr.blocks.BlockContext,
-    field="__init__",
-    replacement=block_context_init,
-)
-script_callbacks.on_before_reload(on_app_reload)
 script_callbacks.on_ui_settings(on_ui_settings)
-# script_callbacks.on_ui_tabs(on_ui_tabs)
+script_callbacks.on_ui_tabs(on_ui_tabs)
