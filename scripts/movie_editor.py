@@ -5,9 +5,15 @@ import pandas
 from PIL import Image
 from tqdm import tqdm
 
-from modules import shared, deepbooru
+from modules import shared
 from modules.ui_components import InputAccordion, ToolButton
 from scripts import m2m_util
+from scripts.m2m_compat import media_source_kwargs, update
+
+try:
+    from modules import deepbooru as deepbooru_module
+except ImportError:
+    deepbooru_module = None
 
 
 class MovieEditor:
@@ -48,7 +54,7 @@ class MovieEditor:
             self.gr_frame_image = gr.Image(
                 label="Frame",
                 elem_id=f"{id_part}_video_frame",
-                source="upload",
+                **media_source_kwargs(gr.Image),
                 visible=False,
                 height=480,
             )
@@ -125,6 +131,12 @@ class MovieEditor:
                     value="Deepbooru Keyframe",
                     size="sm",
                     elem_id=f"{id_part}_video_editor_deepbooru",
+                    interactive=deepbooru_module is not None,
+                    tooltip=(
+                        "Tag keyframes with Deepbooru"
+                        if deepbooru_module is not None
+                        else "Unavailable: Forge Neo does not include Deepbooru"
+                    ),
                 )
 
             with gr.Row():
@@ -224,6 +236,13 @@ class MovieEditor:
         Deepbooru key frame
 
         """
+        if deepbooru_module is None:
+            raise gr.Error(
+                "Deepbooru keyframe tagging is unavailable because this Forge Neo "
+                "installation does not provide modules.deepbooru. Other Movie Editor "
+                "features remain available."
+            )
+
         bar = tqdm(total=len(data_frame))
         for index, row in data_frame.iterrows():
             if row["frame"] <= 0:
@@ -232,7 +251,7 @@ class MovieEditor:
             frame = row["frame"] - 1
             image = self.frames[frame]
             image = Image.fromarray(image)
-            prompt = deepbooru.model.tag(image)
+            prompt = deepbooru_module.model.tag(image)
             data_frame.at[index, "prompt"] = prompt
             bar.update(1)
 
@@ -302,30 +321,30 @@ class MovieEditor:
     def movie_change(self, movie_path):
         if not movie_path:
             return (
-                gr.Image.update(visible=False),
-                gr.Slider.update(maximum=0, minimum=0),
-                gr.Slider.update(),
+                update(visible=False),
+                update(maximum=0, minimum=0),
+                update(),
             )
         fps = m2m_util.get_mov_fps(movie_path)
         self.frames = m2m_util.get_mov_all_images(movie_path, fps, True)
 
         self.frame_count = len(self.frames)
         return (
-            gr.Image.update(visible=True),
-            gr.Slider.update(maximum=self.frame_count, minimum=0, value=0),
-            gr.Slider.update(maximum=fps, minimum=0, value=fps),
+            update(visible=True),
+            update(maximum=self.frame_count, minimum=0, value=0),
+            update(maximum=fps, minimum=0, value=fps),
         )
 
     def movie_frame_change(self, movie_path, frame_number):
         if not movie_path:
-            return gr.Image.update(visible=False)
+            return update(visible=False)
 
         if frame_number <= 0:
-            return gr.Image.update(
+            return update(
                 visible=True, label=f"Frame: {frame_number}", value=None
             )
 
-        return gr.Image.update(
+        return update(
             visible=True,
             label=f"Frame: {frame_number}",
             value=self.frames[frame_number - 1],
@@ -333,13 +352,13 @@ class MovieEditor:
 
     def fps_change(self, movie_path, fps):
         if not movie_path:
-            return gr.Image.update(visible=False), gr.Slider.update(
+            return update(visible=False), update(
                 maximum=0, minimum=0
             )
 
         self.frames = m2m_util.get_mov_all_images(movie_path, fps, True)
         self.frame_count = len(self.frames)
         return (
-            gr.Image.update(visible=True),
-            gr.Slider.update(maximum=self.frame_count, minimum=0, value=0),
+            update(visible=True),
+            update(maximum=self.frame_count, minimum=0, value=0),
         )

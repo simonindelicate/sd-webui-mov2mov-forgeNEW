@@ -10,6 +10,7 @@ import modules
 
 import modules.infotext_utils as parameters_copypaste
 from scripts import mov2mov
+from scripts.m2m_compat import option, update
 
 
 folder_symbol = "\U0001f4c2"  # 📂
@@ -29,13 +30,14 @@ def create_output_panel(tabname, outdir, toprow=None):
     res = OutputPanel()
 
     def open_folder(f, images=None, index=None):
-        if shared.cmd_opts.hide_ui_dir_config:
+        if option(shared.cmd_opts, "hide_ui_dir_config", False):
             return
 
         try:
-            if 'Sub' in shared.opts.open_dir_button_choice:
+            open_dir_choice = option(shared.opts, "open_dir_button_choice", "") or ""
+            if 'Sub' in open_dir_choice:
                 image_dir = os.path.split(images[index]["name"].rsplit('?', 1)[0])[0]
-                if 'temp' in shared.opts.open_dir_button_choice or not ui_tempdir.is_gradio_temp_path(image_dir):
+                if 'temp' in open_dir_choice or not ui_tempdir.is_gradio_temp_path(image_dir):
                     f = image_dir
         except Exception:
             pass
@@ -48,15 +50,17 @@ def create_output_panel(tabname, outdir, toprow=None):
 
         with gr.Column(variant='panel', elem_id=f"{tabname}_results_panel"):
             with gr.Group(elem_id=f"{tabname}_gallery_container"):
-                res.gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", columns=4, preview=True, height=shared.opts.gallery_height or None)
-                res.video = gr.Video(label='Output', show_label=False, elem_id=f"{tabname}_video", height=shared.opts.gallery_height or None)   
+                gallery_height = option(shared.opts, "gallery_height") or None
+                res.gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", columns=4, preview=True, height=gallery_height)
+                res.video = gr.Video(label='Output', show_label=False, elem_id=f"{tabname}_video", height=gallery_height)
 
             with gr.Row(elem_id=f"image_buttons_{tabname}", elem_classes="image-buttons"):
-                open_folder_button = ToolButton(folder_symbol, elem_id=f'{tabname}_open_folder', visible=not shared.cmd_opts.hide_ui_dir_config, tooltip="Open images output directory.")
+                open_folder_button = ToolButton(folder_symbol, elem_id=f'{tabname}_open_folder', visible=not option(shared.cmd_opts, "hide_ui_dir_config", False), tooltip="Open images output directory.")
 
                 if tabname != "extras":
-                    save = ToolButton('💾', elem_id=f'save_{tabname}', tooltip=f"Save the image to a dedicated directory ({shared.opts.outdir_save}).")
-                    save_zip = ToolButton('🗃️', elem_id=f'save_zip_{tabname}', tooltip=f"Save zip archive with images to a dedicated directory ({shared.opts.outdir_save})")
+                    save_dir = option(shared.opts, "outdir_save", "outputs/save")
+                    save = ToolButton('💾', elem_id=f'save_{tabname}', tooltip=f"Save the video to a dedicated directory ({save_dir}).")
+                    save_zip = ToolButton('🗃️', elem_id=f'save_zip_{tabname}', tooltip=f"Save another copy of the video ({save_dir})")
 
                 buttons = {
                     'img2img': ToolButton('🖼️', elem_id=f'{tabname}_send_to_img2img', tooltip="Send image and generation parameters to img2img tab."),
@@ -68,7 +72,7 @@ def create_output_panel(tabname, outdir, toprow=None):
                     res.button_upscale = ToolButton('✨', elem_id=f'{tabname}_upscale', tooltip="Create an upscaled version of the current image using hires fix settings.")
 
             open_folder_button.click(
-                fn=lambda images, index: open_folder(shared.opts.outdir_samples or outdir, images, index),
+                fn=lambda images, index: open_folder(option(shared.opts, "outdir_samples", "") or outdir, images, index),
                 _js="(y, w) => [y, selected_gallery_index()]",
                 inputs=[
                     res.gallery,
@@ -97,7 +101,7 @@ def create_output_panel(tabname, outdir, toprow=None):
 
                     save.click(
                         fn=call_queue.wrap_gradio_call_no_job(save_video),
-                        _js="(x, y, z, w) => [x, y, false, selected_gallery_index()]",
+                        _js="(video) => [video]",
                         inputs=[
                             res.video,
                         ],
@@ -110,7 +114,7 @@ def create_output_panel(tabname, outdir, toprow=None):
 
                     save_zip.click(
                         fn=call_queue.wrap_gradio_call_no_job(save_video),
-                        _js="(x, y, z, w) => [x, y, true, selected_gallery_index()]",
+                        _js="(video) => [video]",
                         inputs=[
                             res.video,
                         ],
@@ -150,6 +154,6 @@ def save_video(video):
     video_path = os.path.join(path, str(index).zfill(5) + ".mp4")
     shutil.copyfile(video, video_path)
     filename = os.path.relpath(video_path, path)
-    return gr.File.update(value=video_path, visible=True), plaintext_to_html(
+    return update(value=video_path, visible=True), plaintext_to_html(
         f"Saved: {filename}"
     )
