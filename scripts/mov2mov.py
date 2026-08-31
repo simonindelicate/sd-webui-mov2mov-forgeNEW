@@ -29,6 +29,7 @@ import modules
 from ebsynth import Keyframe
 from modules.processing import Processed
 from modules.shared import opts
+from scripts.m2m_compat import option
 
 scripts_mov2mov = scripts.ScriptRunner()
 
@@ -287,7 +288,7 @@ def mov2mov(
 
     p.user = request.username
 
-    if shared.opts.enable_console_prompts:
+    if option(shared.opts, "enable_console_prompts", False):
         print(f"\nmov2mov: {prompt}", file=shared.progress_print_out)
 
     with closing(p):
@@ -324,10 +325,10 @@ def mov2mov(
     shared.total_tqdm.clear()
 
     generation_info_js = processed.js()
-    if opts.samples_log_stdout:
+    if option(opts, "samples_log_stdout", False):
         print(generation_info_js)
 
-    if opts.do_not_show_images:
+    if option(opts, "do_not_show_images", False):
         processed.images = []
 
     return (

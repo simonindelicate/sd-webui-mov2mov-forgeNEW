@@ -29,7 +29,7 @@ from scripts.m2m_config import mov2mov_outpath_samples, mov2mov_output_dir
 from scripts.mov2mov import scripts_mov2mov
 from scripts.movie_editor import MovieEditor
 from scripts.m2m_ui_common import create_output_panel
-from scripts.m2m_compat import media_source_kwargs
+from scripts.m2m_compat import media_source_kwargs, option
 
 id_part = "mov2mov"
 
@@ -53,7 +53,7 @@ def on_ui_settings():
 img2img_toprow: gr.Row = None
 
 
-def on_ui_tabs():
+def _build_ui_tabs():
     """
 
     构造ui
@@ -64,7 +64,9 @@ def on_ui_tabs():
         "mov2mov", id=f"tab_{id_part}", elem_id=f"tab_{id_part}"
     ) as mov2mov_interface:
         toprow = ui_toprow.Toprow(
-            is_img2img=True, is_compact=shared.opts.compact_prompt_box, id_part=id_part
+            is_img2img=True,
+            is_compact=option(shared.opts, "compact_prompt_box", False),
+            id_part=id_part,
         )
         dummy_component = gr.Label(visible=False)
 
@@ -290,7 +292,9 @@ def on_ui_tabs():
                     if category not in {"accordions"}:
                         scripts_mov2mov.setup_ui_for_section(category)
 
-            output_panel = create_output_panel(id_part, opts.mov2mov_output_dir)
+            output_panel = create_output_panel(
+                id_part, option(opts, "mov2mov_output_dir", mov2mov_output_dir)
+            )
             mov2mov_args = dict(
                 fn=wrap_gradio_gpu_call(mov2mov.mov2mov, extra_outputs=[None, "", ""]),
                 _js="submit_mov2mov",
@@ -353,6 +357,18 @@ def on_ui_tabs():
         scripts.scripts_current = None
 
         return [(mov2mov_interface, "mov2mov", f"{id_part}_tabs")]
+
+
+def on_ui_tabs():
+    """Build the tab without leaking mov2mov's runner into other UI callbacks."""
+    previous_runner = scripts.scripts_current
+    try:
+        return _build_ui_tabs()
+    finally:
+        # UI construction can fail when another extension has incompatible UI
+        # code. Always restore Forge's global runner so txt2img/img2img startup is
+        # not poisoned by a mov2mov callback error.
+        scripts.scripts_current = previous_runner
 
 
 script_callbacks.on_ui_settings(on_ui_settings)

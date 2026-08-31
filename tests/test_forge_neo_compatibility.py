@@ -25,3 +25,34 @@ def test_deepbooru_is_not_a_required_modules_import():
 def test_processing_uses_the_matching_script_runner():
     processing = (ROOT / "scripts" / "mov2mov.py").read_text(encoding="utf-8")
     assert "p.scripts = scripts_mov2mov" in processing
+
+
+def test_removed_compact_prompt_option_is_read_with_a_fallback():
+    ui = (ROOT / "scripts" / "m2m_ui.py").read_text(encoding="utf-8")
+    assert 'option(shared.opts, "compact_prompt_box", False)' in ui
+    assert "shared.opts.compact_prompt_box" not in ui
+
+
+def test_all_optional_webui_settings_use_compatibility_accessor():
+    runtime = "\n".join(
+        (ROOT / "scripts" / name).read_text(encoding="utf-8")
+        for name in ("m2m_ui.py", "m2m_ui_common.py", "mov2mov.py")
+    )
+    unsupported_direct_accesses = (
+        "shared.opts.gallery_height",
+        "shared.opts.open_dir_button_choice",
+        "shared.opts.outdir_save",
+        "shared.opts.outdir_samples",
+        "shared.opts.enable_console_prompts",
+        "opts.samples_log_stdout",
+        "opts.do_not_show_images",
+        "shared.cmd_opts.hide_ui_dir_config",
+    )
+    for access in unsupported_direct_accesses:
+        assert access not in runtime
+
+
+def test_ui_callback_restores_the_global_script_runner():
+    ui = (ROOT / "scripts" / "m2m_ui.py").read_text(encoding="utf-8")
+    assert "previous_runner = scripts.scripts_current" in ui
+    assert "scripts.scripts_current = previous_runner" in ui

@@ -28,6 +28,16 @@ packages for this extension.
   `script_callbacks.on_ui_tabs`, rather than monkey-patching Gradio's private
   `BlockContext.__init__`. Output wiring includes generation info, matching the
   four values returned by the generation function.
+* **Removed WebUI options have local defaults.** Forge Neo does not register
+  A1111's `compact_prompt_box` option. Mov2mov reads optional settings through
+  the options data mapping and defaults this UI preference to `False`, avoiding
+  a tab callback failure without adding the removed option back to Forge Neo.
+  The same guarded access is used for nonessential gallery, output-directory,
+  logging, and console options that differ among A1111 and Forge Neo releases.
+* **Failed UI callbacks do not affect other tabs.** The temporary mov2mov script
+  runner is restored in a `finally` block. If mov2mov or another extension raises
+  while constructing the UI, Forge Neo's later txt2img/img2img callbacks do not
+  inherit mov2mov's global runner.
 * **Video validation is explicit.** Invalid/zero source FPS and invalid requested
   FPS now produce useful errors, and frame sampling can no longer calculate a
   zero step.
@@ -59,4 +69,3 @@ error instead of silently producing an unprocessed video.
 Restart Forge Neo after installing or updating the extension. Startup errors
 should be reported with the complete console traceback and Forge Neo commit;
 the extension must run in Forge Neo's own Python environment.
-
