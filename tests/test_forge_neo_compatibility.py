@@ -56,3 +56,14 @@ def test_ui_callback_restores_the_global_script_runner():
     ui = (ROOT / "scripts" / "m2m_ui.py").read_text(encoding="utf-8")
     assert "previous_runner = scripts.scripts_current" in ui
     assert "scripts.scripts_current = previous_runner" in ui
+
+
+def test_toprow_is_created_inside_a_blocks_context():
+    ui = (ROOT / "scripts" / "m2m_ui.py").read_text(encoding="utf-8")
+    blocks = ui.index("with gr.Blocks() as mov2mov_interface:")
+    toprow = ui.index("toprow = ui_toprow.Toprow(")
+    callback_return = ui.index('return [(mov2mov_interface, "mov2mov"')
+    assert blocks < toprow < callback_return
+    assert "with gr.TabItem(" not in ui
+    assert 'elem_id="txt2img_extra_tabs"' not in ui
+    assert 'elem_id="resize_mode"' not in ui

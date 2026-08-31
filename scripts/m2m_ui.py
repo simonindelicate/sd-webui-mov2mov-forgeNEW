@@ -60,9 +60,11 @@ def _build_ui_tabs():
     """
     scripts.scripts_current = scripts_mov2mov
     scripts_mov2mov.initialize_scripts(is_img2img=True)
-    with gr.TabItem(
-        "mov2mov", id=f"tab_{id_part}", elem_id=f"tab_{id_part}"
-    ) as mov2mov_interface:
+    # on_ui_tabs callbacks are invoked while Forge Neo is collecting interfaces,
+    # not from inside its root Blocks context. Components with constructor-time
+    # events (notably Toprow.prompt_img.change) therefore require an interface
+    # Blocks of their own, exactly like Forge's built-in extension tabs.
+    with gr.Blocks() as mov2mov_interface:
         toprow = ui_toprow.Toprow(
             is_img2img=True,
             is_compact=option(shared.opts, "compact_prompt_box", False),
@@ -71,7 +73,7 @@ def _build_ui_tabs():
         dummy_component = gr.Label(visible=False)
 
         extra_tabs = gr.Tabs(
-            elem_id="txt2img_extra_tabs", elem_classes=["extra-networks"]
+            elem_id=f"{id_part}_extra_tabs", elem_classes=["extra-networks"]
         )
         extra_tabs.__enter__()
 
@@ -100,7 +102,7 @@ def _build_ui_tabs():
                         with FormRow():
                             resize_mode = gr.Radio(
                                 label="Resize mode",
-                                elem_id="resize_mode",
+                                elem_id=f"{id_part}_resize_mode",
                                 choices=[
                                     "Just resize",
                                     "Crop and resize",

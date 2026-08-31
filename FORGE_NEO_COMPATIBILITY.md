@@ -27,7 +27,10 @@ packages for this extension.
 * **UI registration uses Forge callbacks.** The mov2mov tab is registered with
   `script_callbacks.on_ui_tabs`, rather than monkey-patching Gradio's private
   `BlockContext.__init__`. Output wiring includes generation info, matching the
-  four values returned by the generation function.
+  four values returned by the generation function. The callback constructs and
+  returns its own `gr.Blocks` interface; Forge Neo invokes tab callbacks outside
+  its root Blocks context, and Toprow registers image-prompt events during its
+  constructor.
 * **Removed WebUI options have local defaults.** Forge Neo does not register
   A1111's `compact_prompt_box` option. Mov2mov reads optional settings through
   the options data mapping and defaults this UI preference to `False`, avoiding
