@@ -53,6 +53,12 @@ packages for this extension.
   expected a `LabelData` mapping and crashed when JavaScript supplied a string.
   Resolution events use the existing numeric width, height, and scale controls
   rather than untyped placeholders.
+* **The progress gallery is display-only.** It remains available as the DOM target
+  used by Forge's progress preview, but is never submitted to a Python callback.
+  Modern Gradio validates Gallery inputs as `GalleryData`; the former open-folder
+  event could submit the button's boolean placeholder as the gallery value and
+  fail validation before its callback ran. Open-folder now has no data inputs and
+  opens mov2mov's configured output directory directly.
 * **Video validation is explicit.** Invalid/zero source FPS and invalid requested
   FPS now produce useful errors, and frame sampling can no longer calculate a
   zero step.

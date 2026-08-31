@@ -3,7 +3,7 @@ import os
 import shutil
 import gradio as gr
 
-from modules import call_queue, shared, ui_tempdir, util
+from modules import call_queue, shared, util
 from modules.ui_common import plaintext_to_html
 from modules.ui_components import ToolButton
 
@@ -26,19 +26,9 @@ class OutputPanel:
 def create_output_panel(tabname, outdir, toprow=None):
     res = OutputPanel()
 
-    def open_folder(f, images=None, index=None):
+    def open_folder(f):
         if option(shared.cmd_opts, "hide_ui_dir_config", False):
             return
-
-        try:
-            open_dir_choice = option(shared.opts, "open_dir_button_choice", "") or ""
-            if 'Sub' in open_dir_choice:
-                image_dir = os.path.split(images[index]["name"].rsplit('?', 1)[0])[0]
-                if 'temp' in open_dir_choice or not ui_tempdir.is_gradio_temp_path(image_dir):
-                    f = image_dir
-        except Exception:
-            pass
-
         util.open_folder(f)
 
     with gr.Column(elem_id=f"{tabname}_results"):
@@ -60,12 +50,8 @@ def create_output_panel(tabname, outdir, toprow=None):
                     save_zip = ToolButton('🗃️', elem_id=f'save_zip_{tabname}', tooltip=f"Save another copy of the video ({save_dir})")
 
             open_folder_button.click(
-                fn=lambda images, index: open_folder(option(shared.opts, "outdir_samples", "") or outdir, images, index),
-                _js="(y, w) => [y, selected_gallery_index()]",
-                inputs=[
-                    res.gallery,
-                    open_folder_button,  # placeholder for index
-                ],
+                fn=lambda: open_folder(outdir),
+                inputs=[],
                 outputs=[],
             )
 

@@ -85,3 +85,13 @@ def test_event_placeholders_match_modern_gradio_data_models():
     assert 'task_id = gr.Textbox(value="", visible=False)' in ui
     assert "tab_index = gr.Number(value=2, visible=False, precision=0)" in ui
     assert "inputs=[width, height, scale_by]" in ui
+
+
+def test_gallery_is_never_used_as_a_backend_event_input():
+    output_ui = (ROOT / "scripts" / "m2m_ui_common.py").read_text(
+        encoding="utf-8"
+    )
+    assert "inputs=[\n                    res.gallery" not in output_ui
+    assert "selected_gallery_index()" not in output_ui
+    assert "open_folder_button.click" in output_ui
+    assert "inputs=[]" in output_ui
