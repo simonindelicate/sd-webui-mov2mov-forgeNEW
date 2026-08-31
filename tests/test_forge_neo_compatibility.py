@@ -25,3 +25,9 @@ def test_deepbooru_is_not_a_required_modules_import():
 def test_processing_uses_the_matching_script_runner():
     processing = (ROOT / "scripts" / "mov2mov.py").read_text(encoding="utf-8")
     assert "p.scripts = scripts_mov2mov" in processing
+
+
+def test_removed_compact_prompt_option_is_read_with_a_fallback():
+    ui = (ROOT / "scripts" / "m2m_ui.py").read_text(encoding="utf-8")
+    assert 'option(shared.opts, "compact_prompt_box", False)' in ui
+    assert "shared.opts.compact_prompt_box" not in ui

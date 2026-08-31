@@ -29,7 +29,7 @@ from scripts.m2m_config import mov2mov_outpath_samples, mov2mov_output_dir
 from scripts.mov2mov import scripts_mov2mov
 from scripts.movie_editor import MovieEditor
 from scripts.m2m_ui_common import create_output_panel
-from scripts.m2m_compat import media_source_kwargs
+from scripts.m2m_compat import media_source_kwargs, option
 
 id_part = "mov2mov"
 
@@ -64,7 +64,9 @@ def on_ui_tabs():
         "mov2mov", id=f"tab_{id_part}", elem_id=f"tab_{id_part}"
     ) as mov2mov_interface:
         toprow = ui_toprow.Toprow(
-            is_img2img=True, is_compact=shared.opts.compact_prompt_box, id_part=id_part
+            is_img2img=True,
+            is_compact=option(shared.opts, "compact_prompt_box", False),
+            id_part=id_part,
         )
         dummy_component = gr.Label(visible=False)
 
