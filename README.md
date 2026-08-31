@@ -42,6 +42,14 @@ Also, mov2mov will work better with the [bg-mask](https://github.com/Scholar01/s
 4. Click Install.
 5. Restart WebUI.
 
+### Forge Neo
+
+This fork supports current `sd-webui-forge-neo` without downgrading its Gradio,
+PyTorch, or other core packages. It continues to process video frames through
+the img2img pipeline and supports img2img always-on scripts such as FaceSwapLab.
+See [Forge Neo compatibility](FORGE_NEO_COMPATIBILITY.md) for implementation
+details, feature availability, and troubleshooting.
+
 
 
 ## Change Log

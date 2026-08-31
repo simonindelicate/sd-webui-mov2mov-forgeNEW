@@ -10,6 +10,7 @@ import modules
 
 import modules.infotext_utils as parameters_copypaste
 from scripts import mov2mov
+from scripts.m2m_compat import update
 
 
 folder_symbol = "\U0001f4c2"  # 📂
@@ -150,6 +151,6 @@ def save_video(video):
     video_path = os.path.join(path, str(index).zfill(5) + ".mp4")
     shutil.copyfile(video, video_path)
     filename = os.path.relpath(video_path, path)
-    return gr.File.update(value=video_path, visible=True), plaintext_to_html(
+    return update(value=video_path, visible=True), plaintext_to_html(
         f"Saved: {filename}"
     )
